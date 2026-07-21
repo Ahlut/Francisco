@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Francisco</title>
+<style>
+  :root{
+    --bg:#12151F; --card:#1C2130; --text:#F2EFE8;
+    --leite:#F0B860; --agua:#7FB8C9; --terra:#C98A6B; --lilas:#9D8FD4;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  body{
+    margin:0; background:var(--bg); color:var(--text);
+    font-family:-apple-system,'SF Pro Rounded','Segoe UI',system-ui,sans-serif;
+  }
+  #app{max-width:480px; margin:0 auto; padding:20px 16px 90px;}
+  .card{background:var(--card); border-radius:20px; padding:16px; margin-bottom:14px;}
+  .row{display:flex; gap:10px; margin-bottom:14px;}
+  .btn{
+    flex:1; background:var(--card); border-radius:18px; color:var(--text);
+    padding:14px 6px; font-size:15px; font-weight:700; cursor:pointer;
+    display:flex; flex-direction:column; align-items:center; gap:4px;
+    border:1.5px solid transparent; font-family:inherit;
+  }
+  .btn:active{transform:scale(.96);}
+  .btn .ico{font-size:24px;}
+  .b-leite{border-color:#F0B86044;}
+  .b-agua{border-color:#7FB8C944;}
+  .b-terra{border-color:#C98A6B44;}
+  .b-lilas{border-color:#9D8FD444; flex-direction:row;}
+  .sec{font-size:13px; font-weight:800; opacity:.6; margin:4px 2px 8px; letter-spacing:.5px;}
+  .ghost{background:none; border:none; color:var(--text); cursor:pointer; font-family:inherit;}
+  .pill{
+    background:#ffffff10; border:none; border-radius:999px; color:var(--text);
+    opacity:.75; font-size:14px; padding:4px 10px; cursor:pointer;
+    font-variant-numeric:tabular-nums; font-family:inherit;
+  }
+  #toast{
+    position:fixed; bottom:24px; left:50%; transform:translateX(-50%);
+    background:var(--leite); color:var(--bg); font-weight:800; padding:10px 18px;
+    border-radius:999px; font-size:14px; box-shadow:0 6px 20px rgba(0,0,0,.4);
+    white-space:nowrap; display:none; z-index:60;
+  }
+  #modal{
+    position:fixed; inset:0; background:rgba(10,12,20,.75); z-index:50;
+    display:none; align-items:center; justify-content:center; padding:20px;
+  }
+  #modal .box{background:var(--card); border-radius:22px; padding:22px; width:100%; max-width:340px; border:1px solid #ffffff14;}
+  .mrow{display:flex; gap:8px; margin-bottom:16px;}
+  .mbtn{
+    flex:1; background:var(--bg); border:1px solid #ffffff22; border-radius:12px;
+    color:var(--text); padding:12px 0; font-size:15px; font-weight:700; cursor:pointer;
+    font-family:inherit; font-variant-numeric:tabular-nums;
+  }
+  .save{background:var(--leite); border:none; color:var(--bg); font-weight:800;}
+  @media (prefers-reduced-motion:reduce){ .btn:active{transform:none;} }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="modal"></div>
+<div id="toast"></div>
+
+<script>
+"use strict";
+const KEY = "francisco-events-v1";
+const BIRTH = new Date(2026, 6, 19);
+const TYPES = {
+  esq:{label:"Peito esq.",icon:"🤱",group:"mamada"},
+  dir:{label:"Peito dir.",icon:"🤱",group:"mamada"},
+  bib:{label:"Biberão",icon:"🍼",group:"mamada"},
+  xixi:{label:"Xixi",icon:"💧",group:"fralda"},
+  coco:{label:"Cocó",icon:"💩",group:"fralda"},
+  ambos:{label:"Xixi + Cocó",icon:"💧💩",group:"fralda"},
+  sono_ini:{label:"Adormeceu",icon:"🌙",group:"sono"},
+  sono_fim:{label:"Acordou",icon:"☀️",group:"sono"},
+};
+
+let events = [];
+try { events = JSON.parse(localStorage.getItem(KEY) || "[]"); } catch(e){ events = []; }
+let dayOffset = 0;
+let editId = null, editTs = 0;
+let toastTimer = null;
+
+const pad = n => String(n).padStart(2,"0");
+const hm = ts => { const d = new Date(ts); return pad(d.getHours())+":"+pad(d.getMinutes()); };
+const sameDay = (ts, ref) => { const a=new Date(ts); return a.getFullYear()===ref.getFullYear()&&a.getMonth()===ref.getMonth()&&a.getDate()===ref.getDate(); };
+const durText = ms => { if(ms<0)ms=0; const m=Math.floor(ms/60000), h=Math.floor(m/60); return h===0? m+" min" : h+"h"+pad(m%60); };
+const esc = s => s.replace(/[&<>"]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]));
+
+function save(){
+  try { localStorage.setItem(KEY, JSON.stringify(events)); }
+  catch(e){ toast("⚠️ Não consegui guardar"); }
+}
+function toast(msg){
+  const t = document.getElementById("toast");
+  t.textContent = msg; t.style.display = "block";
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=>{ t.style.display="none"; }, 2200);
+}
+function log(type){
+  events.unshift({id:Date.now()+"-"+Math.random().toString(36).slice(2,6), type, ts:Date.now()});
+  save(); render();
+  toast(TYPES[type].icon+" "+TYPES[type].label+" · "+hm(Date.now()));
+}
+function removeEv(id){
+  events = events.filter(e=>e.id!==id);
+  save(); render(); toast("Registo apagado");
+}
+function openEdit(id){
+  const ev = events.find(e=>e.id===id); if(!ev) return;
+  editId = id; editTs = ev.ts; renderModal();
+  document.getElementById("modal").style.display = "flex";
+}
+function closeEdit(){ document.getElementById("modal").style.display="none"; editId=null; }
+function shiftEdit(ms){ editTs += ms; renderModal(); }
+function saveEdit(){
+  events = events.map(e => e.id===editId ? {...e, ts:editTs} : e);
+  save(); closeEdit(); render(); toast("✎ Movido para "+hm(editTs));
+}
+function nav(d){ if(dayOffset+d<=0){ dayOffset+=d; render(); } }
+
+function renderModal(){
+  const ev = events.find(e=>e.id===editId); if(!ev) return;
+  const t = TYPES[ev.type];
+  const dLabel = sameDay(editTs,new Date()) ? "Hoje" : pad(new Date(editTs).getDate())+"/"+pad(new Date(editTs).getMonth()+1);
+  document.getElementById("modal").innerHTML = `
+    <div class="box">
+      <div style="font-weight:800;font-size:16px;margin-bottom:4px">${t.icon} ${esc(t.label)}</div>
+      <div style="font-size:13px;opacity:.5;margin-bottom:14px">Ajusta a hora e o registo passa para o sítio certo.</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <button class="pill" style="font-size:18px;padding:8px 16px" onclick="shiftEdit(-86400000)">‹</button>
+        <div style="font-weight:800;font-size:15px">${dLabel}</div>
+        <button class="pill" style="font-size:18px;padding:8px 16px" onclick="shiftEdit(86400000)">›</button>
+      </div>
+      <div style="text-align:center;font-size:42px;font-weight:900;color:var(--leite);margin-bottom:12px;font-variant-numeric:tabular-nums">${hm(editTs)}</div>
+      <div class="mrow">
+        <button class="mbtn" onclick="shiftEdit(-3600000)">−1h</button>
+        <button class="mbtn" onclick="shiftEdit(-300000)">−5m</button>
+        <button class="mbtn" onclick="shiftEdit(300000)">+5m</button>
+        <button class="mbtn" onclick="shiftEdit(3600000)">+1h</button>
+      </div>
+      <div class="mrow" style="margin-bottom:0">
+        <button class="mbtn" onclick="closeEdit()">Cancelar</button>
+        <button class="mbtn save" onclick="saveEdit()">Guardar</button>
+      </div>
+    </div>`;
+}
+
+function render(){
+  const now = Date.now();
+  const ref = new Date(); ref.setDate(ref.getDate()+dayOffset);
+  const dayEvents = events.filter(e=>sameDay(e.ts,ref)).sort((a,b)=>b.ts-a.ts);
+  const nMam = dayEvents.filter(e=>TYPES[e.type].group==="mamada").length;
+  const nXixi = dayEvents.filter(e=>e.type==="xixi"||e.type==="ambos").length;
+  const nCoco = dayEvents.filter(e=>e.type==="coco"||e.type==="ambos").length;
+  const lastFeed = events.filter(e=>TYPES[e.type].group==="mamada").sort((a,b)=>b.ts-a.ts)[0];
+  const lastSleep = events.filter(e=>TYPES[e.type].group==="sono").sort((a,b)=>b.ts-a.ts)[0];
+  const sleeping = lastSleep && lastSleep.type==="sono_ini";
+  const ageDays = Math.floor((now-BIRTH.getTime())/86400000);
+  const dayLabel = dayOffset===0?"Hoje":dayOffset===-1?"Ontem":pad(ref.getDate())+"/"+pad(ref.getMonth()+1);
+
+  let heroInner = lastFeed
+    ? `<div style="font-size:44px;font-weight:900;color:var(--leite);line-height:1">${durText(now-lastFeed.ts)}</div>
+       <div style="font-size:13px;opacity:.55;margin-top:6px">${TYPES[lastFeed.type].label} às ${hm(lastFeed.ts)}</div>`
+    : `<div style="font-size:18px;opacity:.55">Ainda sem registos</div>`;
+  if (sleeping) heroInner += `<div style="margin-top:10px;font-size:13px;color:var(--lilas)">🌙 A dormir desde as ${hm(lastSleep.ts)} (${durText(now-lastSleep.ts)})</div>`;
+
+  const timeline = dayEvents.length===0
+    ? `<div style="opacity:.45;font-size:14px;text-align:center;padding:10px 0">Sem registos neste dia. Toca num botão acima para registar.</div>`
+    : dayEvents.map(e=>`
+      <div style="display:flex;align-items:center;gap:12px;padding:9px 2px;border-bottom:1px solid #ffffff0d">
+        <span style="font-size:18px;width:34px;text-align:center">${TYPES[e.type].icon}</span>
+        <span style="flex:1;font-size:15px">${esc(TYPES[e.type].label)}</span>
+        <button class="pill" onclick="openEdit('${e.id}')">${hm(e.ts)} ✎</button>
+        <button class="ghost" style="opacity:.3;font-size:15px;padding:4px 6px" onclick="removeEv('${e.id}')" aria-label="Apagar">✕</button>
+      </div>`).join("");
+
+  document.getElementById("app").innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px">
+      <div style="font-size:26px;font-weight:900;letter-spacing:-.5px">Francisco</div>
+      <div style="font-size:13px;opacity:.55">${ageDays} ${ageDays===1?"dia":"dias"} · 3,06 kg · 48,5 cm</div>
+    </div>
+    <div style="font-size:12px;opacity:.4;margin-bottom:16px">nasceu a 19 de julho de 2026</div>
+
+    <div class="card" style="text-align:center;padding:22px 16px;border:1px solid #F0B86022">
+      <div style="font-size:12px;text-transform:uppercase;letter-spacing:2px;opacity:.5;margin-bottom:6px">Última mamada</div>
+      ${heroInner}
+    </div>
+
+    <div class="sec">MAMADA</div>
+    <div class="row">
+      <button class="btn b-leite" onclick="log('esq')"><span class="ico">🤱</span>Esquerdo</button>
+      <button class="btn b-leite" onclick="log('dir')"><span class="ico">🤱</span>Direito</button>
+      <button class="btn b-leite" onclick="log('bib')"><span class="ico">🍼</span>Biberão</button>
+    </div>
+
+    <div class="sec">FRALDA</div>
+    <div class="row">
+      <button class="btn b-agua" onclick="log('xixi')"><span class="ico">💧</span>Xixi</button>
+      <button class="btn b-terra" onclick="log('coco')"><span class="ico">💩</span>Cocó</button>
+      <button class="btn b-terra" onclick="log('ambos')"><span class="ico">💧💩</span>Ambos</button>
+    </div>
+
+    <div class="sec">SONO</div>
+    <div class="row">
+      ${sleeping
+        ? `<button class="btn b-lilas" onclick="log('sono_fim')"><span style="font-size:22px">☀️</span>&nbsp;Acordou</button>`
+        : `<button class="btn b-lilas" onclick="log('sono_ini')"><span style="font-size:22px">🌙</span>&nbsp;Adormeceu</button>`}
+    </div>
+
+    <div class="card" style="display:flex;justify-content:space-between;align-items:center">
+      <button class="ghost" style="font-size:20px;padding:6px" onclick="nav(-1)">‹</button>
+      <div style="text-align:center">
+        <div style="font-weight:800;margin-bottom:6px">${dayLabel}</div>
+        <div style="display:flex;gap:16px;font-size:14px">
+          <span>🤱 ${nMam}</span><span>💧 ${nXixi}</span><span>💩 ${nCoco}</span>
+        </div>
+      </div>
+      <button class="ghost" style="font-size:20px;padding:6px;opacity:${dayOffset<0?1:.2}" onclick="nav(1)">›</button>
+    </div>
+
+    <div class="card">${timeline}</div>
+
+    <div class="card" style="display:flex;gap:8px">
+      <button class="mbtn" onclick="exportar()">⬇︎ Exportar backup</button>
+      <button class="mbtn" onclick="document.getElementById('imp').click()">⬆︎ Importar</button>
+      <input id="imp" type="file" accept=".json,application/json" style="display:none" onchange="importar(this)">
+    </div>`;
+}
+
+function exportar(){
+  const blob = new Blob([JSON.stringify(events)], {type:"application/json"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  const d = new Date();
+  a.download = "francisco-backup-"+d.getFullYear()+pad(d.getMonth()+1)+pad(d.getDate())+".json";
+  a.click();
+  URL.revokeObjectURL(a.href);
+  toast("⬇︎ Backup exportado");
+}
+function importar(input){
+  const f = input.files && input.files[0]; if(!f) return;
+  const r = new FileReader();
+  r.onload = () => {
+    try {
+      const parsed = JSON.parse(r.result);
+      if(!Array.isArray(parsed)) throw new Error();
+      const ids = new Set(events.map(e=>e.id));
+      let added = 0;
+      parsed.forEach(e=>{ if(e && e.id && !ids.has(e.id)){ events.push(e); added++; } });
+      save(); render(); toast("✅ "+added+" registos importados");
+    } catch(e){ toast("⚠️ Ficheiro inválido"); }
+  };
+  r.readAsText(f);
+  input.value = "";
+}
+
+document.getElementById("modal").addEventListener("click", function(ev){
+  if (ev.target === this) closeEdit();
+});
+render();
+setInterval(render, 30000);
+</script>
+</body>
+</html>
