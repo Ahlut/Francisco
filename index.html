@@ -53,6 +53,18 @@
     font-family:inherit;
   }
   .save{background:var(--leite); border:none; color:var(--bg); font-weight:800;}
+  .pill{
+    background:#ffffff10; border:none; border-radius:999px; color:var(--text);
+    opacity:.75; font-size:14px; padding:4px 10px; cursor:pointer;
+    font-variant-numeric:tabular-nums; font-family:inherit;
+  }
+  .ghost{background:none; border:none; color:var(--text); cursor:pointer; font-family:inherit;}
+  #modal{
+    position:fixed; inset:0; background:rgba(10,12,20,.75); z-index:50;
+    display:none; align-items:center; justify-content:center; padding:20px;
+  }
+  #modal .box{background:var(--card); border-radius:22px; padding:22px; width:100%; max-width:340px; border:1px solid #ffffff14;}
+  .mrow{display:flex; gap:8px; margin-bottom:16px;}
   #toast{
     position:fixed; bottom:24px; left:50%; transform:translateX(-50%);
     background:var(--leite); color:var(--bg); font-weight:800; padding:10px 18px;
@@ -63,13 +75,14 @@
 </head>
 <body>
 <div id="app"></div>
+<div id="modal"></div>
 <div id="toast"></div>
 
 <script>
 "use strict";
 // ================== CONFIGURAÇÃO ==================
-const SUPABASE_URL = "https://hpftlmhiwugvoidbbylr.supabase.co"; // Project URL (Settings → API)
-const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhwZnRsbWhpd3Vndm9pZGJieWxyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM3MTA4MjMsImV4cCI6MjA5OTI4NjgyM30.8oksUXn_KhlIjhQbm3HPgLmqyIcvdgbHbJYbssds95o";                 // anon public key
+const SUPABASE_URL = "https://COLOCA-AQUI.supabase.co"; // Project URL (Settings → API)
+const SUPABASE_ANON_KEY = "COLOCA-AQUI";                 // anon public key
 const PIN = "190726";                                    // PIN do ecrã de Registo
 // ==================================================
 
@@ -161,7 +174,7 @@ async function flushQueue(){
 async function pull(){
   try {
     await flushQueue();
-    const r = await fetch(SUPABASE_URL + "/rest/v1/baby_events?select=id,created_at,tipo,detalhe,nota&order=created_at.desc&limit=3000", {
+    const r = await fetch(SUPABASE_URL + "/rest/v1/baby_events?select=id,created_at,tipo,detalhe,nota&deleted=eq.false&order=created_at.desc&limit=3000", {
       headers: sbHeaders()
     });
     if (!r.ok) throw new Error("select " + r.status);
@@ -184,6 +197,84 @@ function registar(tipo, detalhe){
   const b = BOTOES.find(x=>x.tipo===tipo&&x.detalhe===detalhe);
   toast(b.icon+" "+b.label+" · "+hm(item.created_at));
   flushQueue().then(()=>{ syncState = queue.length ? "pend" : "ok"; render(); });
+}
+
+// ---------- edição e remoção (precisa da policy de UPDATE) ----------
+let editId = null, editTs = 0;
+
+async function patchRow(id, body){
+  const r = await fetch(SUPABASE_URL + "/rest/v1/baby_events?id=eq." + id, {
+    method: "PATCH",
+    headers: { ...sbHeaders(), "Prefer": "return=minimal" },
+    body: JSON.stringify(body)
+  });
+  if (!r.ok) throw new Error("patch " + r.status);
+}
+
+function openEdit(id){
+  const ev = rows.find(e=>e.id===id); if(!ev) return;
+  editId = id; editTs = new Date(ev.created_at).getTime();
+  renderModal();
+  document.getElementById("modal").style.display = "flex";
+}
+function closeEdit(){ document.getElementById("modal").style.display="none"; editId=null; }
+function shiftEdit(ms){ editTs += ms; renderModal(); }
+
+async function saveEdit(){
+  const id = editId;
+  const iso = new Date(editTs).toISOString();
+  const naFila = queue.find(q=>q.id===id);
+  try {
+    if (naFila){ naFila.created_at = iso; saveQueue(); }
+    else { await patchRow(id, { created_at: iso }); }
+    rows = rows.map(e=>e.id===id ? {...e, created_at: iso} : e);
+    rows.sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
+    saveLocal(); closeEdit(); render();
+    toast("✎ Movido para "+hm(iso));
+  } catch(e){
+    toast("🔴 Sem ligação, tenta outra vez");
+  }
+}
+
+async function removeEv(id){
+  const naFila = queue.findIndex(q=>q.id===id);
+  try {
+    if (naFila >= 0){ queue.splice(naFila,1); saveQueue(); }
+    else { await patchRow(id, { deleted: true }); }
+    rows = rows.filter(e=>e.id!==id);
+    saveLocal(); render();
+    toast("Registo apagado");
+  } catch(e){
+    toast("🔴 Sem ligação, tenta outra vez");
+  }
+}
+
+function renderModal(){
+  const ev = rows.find(e=>e.id===editId); if(!ev) return;
+  const b = rotulo(ev);
+  const d = new Date(editTs);
+  const dLabel = hoje(editTs) ? "Hoje" : pad(d.getDate())+"/"+pad(d.getMonth()+1);
+  document.getElementById("modal").innerHTML = `
+    <div class="box">
+      <div style="font-weight:800;font-size:16px;margin-bottom:4px">${b.icon} ${esc(b.label)}</div>
+      <div style="font-size:13px;opacity:.5;margin-bottom:14px">Ajusta a hora e o registo passa para o sítio certo.</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <button class="pill" style="font-size:18px;padding:8px 16px" onclick="shiftEdit(-86400000)">‹</button>
+        <div style="font-weight:800;font-size:15px">${dLabel}</div>
+        <button class="pill" style="font-size:18px;padding:8px 16px" onclick="shiftEdit(86400000)">›</button>
+      </div>
+      <div style="text-align:center;font-size:42px;font-weight:900;color:var(--leite);margin-bottom:12px;font-variant-numeric:tabular-nums">${hm(editTs)}</div>
+      <div class="mrow">
+        <button class="mbtn" onclick="shiftEdit(-3600000)">−1h</button>
+        <button class="mbtn" onclick="shiftEdit(-300000)">−5m</button>
+        <button class="mbtn" onclick="shiftEdit(300000)">+5m</button>
+        <button class="mbtn" onclick="shiftEdit(3600000)">+1h</button>
+      </div>
+      <div class="mrow" style="margin-bottom:0">
+        <button class="mbtn" onclick="closeEdit()">Cancelar</button>
+        <button class="mbtn save" onclick="saveEdit()">Guardar</button>
+      </div>
+    </div>`;
 }
 
 // ---------- navegação ----------
@@ -256,7 +347,8 @@ function render(){
           return `<div style="display:flex;align-items:center;gap:12px;padding:9px 2px;border-bottom:1px solid #ffffff0d">
             <span style="font-size:18px;width:34px;text-align:center">${b.icon}</span>
             <span style="flex:1;font-size:15px">${esc(b.label)}</span>
-            <span style="font-size:14px;opacity:.6;font-variant-numeric:tabular-nums">${hm(e.created_at)}</span>
+            <button class="pill" onclick="openEdit('${e.id}')">${hm(e.created_at)} ✎</button>
+            <button class="ghost" style="opacity:.3;font-size:15px;padding:4px 6px" onclick="removeEv('${e.id}')" aria-label="Apagar">✕</button>
           </div>`;
         }).join("");
 
@@ -274,8 +366,7 @@ function render(){
         ${BOTOES.slice(6,8).map(b=>`<button class="btn ${b.cls}" onclick="registar('${b.tipo}','${b.detalhe}')"><span class="ico">${b.icon}</span>${b.label}</button>`).join("")}
       </div>
       <div class="sec">HOJE</div>
-      <div class="card">${timeline}</div>
-      <div style="font-size:12px;opacity:.35;text-align:center">Os registos são definitivos (sem edição nem remoção).</div>`;
+      <div class="card">${timeline}</div>`;
     return;
   }
 
@@ -318,6 +409,9 @@ function render(){
 }
 
 render();
+document.getElementById("modal").addEventListener("click", function(ev){
+  if (ev.target === this) closeEdit();
+});
 pull();
 setInterval(pull, 45000);
 document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) pull(); });
