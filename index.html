@@ -30,240 +30,297 @@
   .b-leite{border-color:#F0B86044;}
   .b-agua{border-color:#7FB8C944;}
   .b-terra{border-color:#C98A6B44;}
-  .b-lilas{border-color:#9D8FD444; flex-direction:row;}
+  .b-lilas{border-color:#9D8FD444;}
   .sec{font-size:13px; font-weight:800; opacity:.6; margin:4px 2px 8px; letter-spacing:.5px;}
-  .ghost{background:none; border:none; color:var(--text); cursor:pointer; font-family:inherit;}
-  .pill{
-    background:#ffffff10; border:none; border-radius:999px; color:var(--text);
-    opacity:.75; font-size:14px; padding:4px 10px; cursor:pointer;
-    font-variant-numeric:tabular-nums; font-family:inherit;
+  .tabs{display:flex; gap:8px; margin-bottom:18px;}
+  .tab{
+    flex:1; text-align:center; padding:12px 0; border-radius:14px; font-weight:800;
+    font-size:15px; cursor:pointer; background:var(--card); opacity:.55;
+    border:1.5px solid transparent; font-family:inherit; color:var(--text);
   }
+  .tab.on{opacity:1; border-color:#F0B86066;}
+  .metric{flex:1; text-align:center; padding:16px 6px;}
+  .metric .num{font-size:34px; font-weight:900; line-height:1;}
+  .metric .lbl{font-size:12px; opacity:.55; margin-top:6px;}
+  .inp{
+    width:100%; background:var(--bg); border:1px solid #ffffff22; border-radius:12px;
+    color:var(--text); padding:14px; font-size:22px; text-align:center; letter-spacing:6px;
+    font-family:inherit; margin-bottom:12px; font-variant-numeric:tabular-nums;
+  }
+  .mbtn{
+    flex:1; background:var(--bg); border:1px solid #ffffff22; border-radius:12px;
+    color:var(--text); padding:12px 0; font-size:15px; font-weight:700; cursor:pointer;
+    font-family:inherit;
+  }
+  .save{background:var(--leite); border:none; color:var(--bg); font-weight:800;}
   #toast{
     position:fixed; bottom:24px; left:50%; transform:translateX(-50%);
     background:var(--leite); color:var(--bg); font-weight:800; padding:10px 18px;
     border-radius:999px; font-size:14px; box-shadow:0 6px 20px rgba(0,0,0,.4);
     white-space:nowrap; display:none; z-index:60;
   }
-  #modal{
-    position:fixed; inset:0; background:rgba(10,12,20,.75); z-index:50;
-    display:none; align-items:center; justify-content:center; padding:20px;
-  }
-  #modal .box{background:var(--card); border-radius:22px; padding:22px; width:100%; max-width:340px; border:1px solid #ffffff14;}
-  .mrow{display:flex; gap:8px; margin-bottom:16px;}
-  .mbtn{
-    flex:1; background:var(--bg); border:1px solid #ffffff22; border-radius:12px;
-    color:var(--text); padding:12px 0; font-size:15px; font-weight:700; cursor:pointer;
-    font-family:inherit; font-variant-numeric:tabular-nums;
-  }
-  .save{background:var(--leite); border:none; color:var(--bg); font-weight:800;}
-  @media (prefers-reduced-motion:reduce){ .btn:active{transform:none;} }
 </style>
 </head>
 <body>
 <div id="app"></div>
-<div id="modal"></div>
 <div id="toast"></div>
 
 <script>
 "use strict";
-const KEY = "francisco-events-v1";
+// ================== CONFIGURAÇÃO ==================
+const SUPABASE_URL = "https://hpftlmhiwugvoidbbylr.supabase.co"; // Project URL (Settings → API)
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhwZnRsbWhpd3Vndm9pZGJieWxyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM3MTA4MjMsImV4cCI6MjA5OTI4NjgyM30.8oksUXn_KhlIjhQbm3HPgLmqyIcvdgbHbJYbssds95o";                 // anon public key
+const PIN = "190726";                                    // PIN do ecrã de Registo
+// ==================================================
+
 const BIRTH = new Date(2026, 6, 19);
-const TYPES = {
-  esq:{label:"Peito esq.",icon:"🤱",group:"mamada"},
-  dir:{label:"Peito dir.",icon:"🤱",group:"mamada"},
-  bib:{label:"Biberão",icon:"🍼",group:"mamada"},
-  xixi:{label:"Xixi",icon:"💧",group:"fralda"},
-  coco:{label:"Cocó",icon:"💩",group:"fralda"},
-  ambos:{label:"Xixi + Cocó",icon:"💧💩",group:"fralda"},
-  sono_ini:{label:"Adormeceu",icon:"🌙",group:"sono"},
-  sono_fim:{label:"Acordou",icon:"☀️",group:"sono"},
+const LOCAL_KEY = "francisco-cache-v3";
+const QUEUE_KEY = "francisco-queue-v3";
+
+const BOTOES = [
+  {tipo:"mamada", detalhe:"esquerdo", label:"Esquerdo", icon:"🤱", cls:"b-leite"},
+  {tipo:"mamada", detalhe:"direito",  label:"Direito",  icon:"🤱", cls:"b-leite"},
+  {tipo:"mamada", detalhe:"biberao",  label:"Biberão",  icon:"🍼", cls:"b-leite"},
+  {tipo:"fralda", detalhe:"xixi",     label:"Xixi",     icon:"💧", cls:"b-agua"},
+  {tipo:"fralda", detalhe:"coco",     label:"Cocó",     icon:"💩", cls:"b-terra"},
+  {tipo:"fralda", detalhe:"ambos",    label:"Ambos",    icon:"💧💩", cls:"b-terra"},
+  {tipo:"sono",   detalhe:"adormeceu",label:"Adormeceu",icon:"🌙", cls:"b-lilas"},
+  {tipo:"sono",   detalhe:"acordou",  label:"Acordou",  icon:"☀️", cls:"b-lilas"},
+];
+const rotulo = e => {
+  const b = BOTOES.find(b=>b.tipo===e.tipo && b.detalhe===e.detalhe);
+  return b ? b : {label:e.tipo, icon:"•"};
 };
 
-let events = [];
-try { events = JSON.parse(localStorage.getItem(KEY) || "[]"); } catch(e){ events = []; }
-let dayOffset = 0;
-let editId = null, editTs = 0;
+// ---------- estado ----------
+let rows = [];
+try { rows = JSON.parse(localStorage.getItem(LOCAL_KEY) || "[]"); } catch(e){}
+let queue = [];
+try { queue = JSON.parse(localStorage.getItem(QUEUE_KEY) || "[]"); } catch(e){}
+let screen = "inicio";      // inicio | pin | registo
+let selDay = new Date();    // dia selecionado no painel
+let syncState = "ok";       // ok | pend | err
 let toastTimer = null;
+const pinOK = () => sessionStorage.getItem("francisco-pin") === "1";
 
+// ---------- helpers ----------
 const pad = n => String(n).padStart(2,"0");
 const hm = ts => { const d = new Date(ts); return pad(d.getHours())+":"+pad(d.getMinutes()); };
-const sameDay = (ts, ref) => { const a=new Date(ts); return a.getFullYear()===ref.getFullYear()&&a.getMonth()===ref.getMonth()&&a.getDate()===ref.getDate(); };
-const durText = ms => { if(ms<0)ms=0; const m=Math.floor(ms/60000), h=Math.floor(m/60); return h===0? m+" min" : h+"h"+pad(m%60); };
-const esc = s => s.replace(/[&<>"]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]));
-
-function save(){
-  try { localStorage.setItem(KEY, JSON.stringify(events)); }
-  catch(e){ toast("⚠️ Não consegui guardar"); }
+const hoje = ts => { const a=new Date(ts), b=new Date(); return a.getFullYear()===b.getFullYear()&&a.getMonth()===b.getMonth()&&a.getDate()===b.getDate(); };
+const mesmoDia = (ts, d) => { const a=new Date(ts); return a.getFullYear()===d.getFullYear()&&a.getMonth()===d.getMonth()&&a.getDate()===d.getDate(); };
+const eHoje = d => mesmoDia(Date.now(), d);
+const isoDia = d => d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate());
+function navDia(n){
+  const d = new Date(selDay); d.setDate(d.getDate()+n);
+  if (d > new Date()) return;
+  selDay = d; render();
 }
+function escolherDia(v){
+  if (!v) return;
+  const d = new Date(v+"T12:00:00");
+  if (isNaN(d.getTime()) || d > new Date()) return;
+  selDay = d; render();
+}
+const durText = ms => { if(ms<0)ms=0; const m=Math.floor(ms/60000), h=Math.floor(m/60); return h===0? m+" min" : h+"h"+pad(m%60); };
+const esc = s => String(s).replace(/[&<>"]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]));
+const saveLocal = () => { try{ localStorage.setItem(LOCAL_KEY, JSON.stringify(rows)); }catch(e){} };
+const saveQueue = () => { try{ localStorage.setItem(QUEUE_KEY, JSON.stringify(queue)); }catch(e){} };
+const uuid = () => (crypto.randomUUID ? crypto.randomUUID() :
+  "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g,c=>{const r=Math.random()*16|0;return (c==="x"?r:(r&0x3|0x8)).toString(16);}));
+
 function toast(msg){
   const t = document.getElementById("toast");
   t.textContent = msg; t.style.display = "block";
   clearTimeout(toastTimer);
   toastTimer = setTimeout(()=>{ t.style.display="none"; }, 2200);
 }
-function log(type){
-  events.unshift({id:Date.now()+"-"+Math.random().toString(36).slice(2,6), type, ts:Date.now()});
-  save(); render();
-  toast(TYPES[type].icon+" "+TYPES[type].label+" · "+hm(Date.now()));
-}
-function removeEv(id){
-  events = events.filter(e=>e.id!==id);
-  save(); render(); toast("Registo apagado");
-}
-function openEdit(id){
-  const ev = events.find(e=>e.id===id); if(!ev) return;
-  editId = id; editTs = ev.ts; renderModal();
-  document.getElementById("modal").style.display = "flex";
-}
-function closeEdit(){ document.getElementById("modal").style.display="none"; editId=null; }
-function shiftEdit(ms){ editTs += ms; renderModal(); }
-function saveEdit(){
-  events = events.map(e => e.id===editId ? {...e, ts:editTs} : e);
-  save(); closeEdit(); render(); toast("✎ Movido para "+hm(editTs));
-}
-function nav(d){ if(dayOffset+d<=0){ dayOffset+=d; render(); } }
 
-function renderModal(){
-  const ev = events.find(e=>e.id===editId); if(!ev) return;
-  const t = TYPES[ev.type];
-  const dLabel = sameDay(editTs,new Date()) ? "Hoje" : pad(new Date(editTs).getDate())+"/"+pad(new Date(editTs).getMonth()+1);
-  document.getElementById("modal").innerHTML = `
-    <div class="box">
-      <div style="font-weight:800;font-size:16px;margin-bottom:4px">${t.icon} ${esc(t.label)}</div>
-      <div style="font-size:13px;opacity:.5;margin-bottom:14px">Ajusta a hora e o registo passa para o sítio certo.</div>
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-        <button class="pill" style="font-size:18px;padding:8px 16px" onclick="shiftEdit(-86400000)">‹</button>
-        <div style="font-weight:800;font-size:15px">${dLabel}</div>
-        <button class="pill" style="font-size:18px;padding:8px 16px" onclick="shiftEdit(86400000)">›</button>
-      </div>
-      <div style="text-align:center;font-size:42px;font-weight:900;color:var(--leite);margin-bottom:12px;font-variant-numeric:tabular-nums">${hm(editTs)}</div>
-      <div class="mrow">
-        <button class="mbtn" onclick="shiftEdit(-3600000)">−1h</button>
-        <button class="mbtn" onclick="shiftEdit(-300000)">−5m</button>
-        <button class="mbtn" onclick="shiftEdit(300000)">+5m</button>
-        <button class="mbtn" onclick="shiftEdit(3600000)">+1h</button>
-      </div>
-      <div class="mrow" style="margin-bottom:0">
-        <button class="mbtn" onclick="closeEdit()">Cancelar</button>
-        <button class="mbtn save" onclick="saveEdit()">Guardar</button>
-      </div>
-    </div>`;
+// ---------- Supabase (só SELECT e INSERT, anon key) ----------
+const sbHeaders = () => ({
+  "apikey": SUPABASE_ANON_KEY,
+  "Authorization": "Bearer " + SUPABASE_ANON_KEY,
+  "Content-Type": "application/json"
+});
+
+async function pushOne(item){
+  const r = await fetch(SUPABASE_URL + "/rest/v1/baby_events?on_conflict=id", {
+    method: "POST",
+    headers: { ...sbHeaders(), "Prefer": "resolution=ignore-duplicates,return=minimal" },
+    body: JSON.stringify([item])
+  });
+  if (!r.ok) throw new Error("insert " + r.status);
 }
 
-function render(){
+async function flushQueue(){
+  while (queue.length){
+    try { await pushOne(queue[0]); queue.shift(); saveQueue(); }
+    catch(e){ syncState = "pend"; return; }
+  }
+}
+
+async function pull(){
+  try {
+    await flushQueue();
+    const r = await fetch(SUPABASE_URL + "/rest/v1/baby_events?select=id,created_at,tipo,detalhe,nota&order=created_at.desc&limit=3000", {
+      headers: sbHeaders()
+    });
+    if (!r.ok) throw new Error("select " + r.status);
+    const remote = await r.json();
+    const ids = new Set(remote.map(e=>e.id));
+    rows = remote.concat(queue.filter(q=>!ids.has(q.id)));
+    saveLocal();
+    syncState = queue.length ? "pend" : "ok";
+  } catch(e){
+    syncState = "err";
+  }
+  render();
+}
+
+function registar(tipo, detalhe){
+  const item = { id: uuid(), created_at: new Date().toISOString(), tipo, detalhe, nota: null };
+  rows.unshift(item); saveLocal();
+  queue.push(item); saveQueue();
+  render();
+  const b = BOTOES.find(x=>x.tipo===tipo&&x.detalhe===detalhe);
+  toast(b.icon+" "+b.label+" · "+hm(item.created_at));
+  flushQueue().then(()=>{ syncState = queue.length ? "pend" : "ok"; render(); });
+}
+
+// ---------- navegação ----------
+function irPara(dest){
+  if (dest === "registo" && !pinOK()){ screen = "pin"; }
+  else { screen = dest; }
+  render();
+}
+function validarPin(){
+  const v = document.getElementById("pin-inp").value.trim();
+  if (v === PIN){ sessionStorage.setItem("francisco-pin","1"); screen = "registo"; render(); }
+  else { toast("⚠️ PIN errado"); document.getElementById("pin-inp").value = ""; }
+}
+
+// ---------- render ----------
+function metricas(dia){
+  const doDia = rows.filter(e=>mesmoDia(e.created_at, dia));
+  const nMam = doDia.filter(e=>e.tipo==="mamada").length;
+  const nXixi = doDia.filter(e=>e.tipo==="fralda"&&(e.detalhe==="xixi"||e.detalhe==="ambos")).length;
+  const nCoco = doDia.filter(e=>e.tipo==="fralda"&&(e.detalhe==="coco"||e.detalhe==="ambos")).length;
+  const totXixi = rows.filter(e=>e.tipo==="fralda"&&(e.detalhe==="xixi"||e.detalhe==="ambos")).length;
+  const totCoco = rows.filter(e=>e.tipo==="fralda"&&(e.detalhe==="coco"||e.detalhe==="ambos")).length;
+  const ultMam = rows.find(e=>e.tipo==="mamada");
+  return {nMam, nXixi, nCoco, totXixi, totCoco, ultMam};
+}
+
+function header(){
   const now = Date.now();
-  const ref = new Date(); ref.setDate(ref.getDate()+dayOffset);
-  const dayEvents = events.filter(e=>sameDay(e.ts,ref)).sort((a,b)=>b.ts-a.ts);
-  const nMam = dayEvents.filter(e=>TYPES[e.type].group==="mamada").length;
-  const nXixi = dayEvents.filter(e=>e.type==="xixi"||e.type==="ambos").length;
-  const nCoco = dayEvents.filter(e=>e.type==="coco"||e.type==="ambos").length;
-  const lastFeed = events.filter(e=>TYPES[e.type].group==="mamada").sort((a,b)=>b.ts-a.ts)[0];
-  const lastSleep = events.filter(e=>TYPES[e.type].group==="sono").sort((a,b)=>b.ts-a.ts)[0];
-  const sleeping = lastSleep && lastSleep.type==="sono_ini";
   const ageDays = Math.floor((now-BIRTH.getTime())/86400000);
-  const dayLabel = dayOffset===0?"Hoje":dayOffset===-1?"Ontem":pad(ref.getDate())+"/"+pad(ref.getMonth()+1);
-
-  let heroInner = lastFeed
-    ? `<div style="font-size:44px;font-weight:900;color:var(--leite);line-height:1">${durText(now-lastFeed.ts)}</div>
-       <div style="font-size:13px;opacity:.55;margin-top:6px">${TYPES[lastFeed.type].label} às ${hm(lastFeed.ts)}</div>`
-    : `<div style="font-size:18px;opacity:.55">Ainda sem registos</div>`;
-  if (sleeping) heroInner += `<div style="margin-top:10px;font-size:13px;color:var(--lilas)">🌙 A dormir desde as ${hm(lastSleep.ts)} (${durText(now-lastSleep.ts)})</div>`;
-
-  const timeline = dayEvents.length===0
-    ? `<div style="opacity:.45;font-size:14px;text-align:center;padding:10px 0">Sem registos neste dia. Toca num botão acima para registar.</div>`
-    : dayEvents.map(e=>`
-      <div style="display:flex;align-items:center;gap:12px;padding:9px 2px;border-bottom:1px solid #ffffff0d">
-        <span style="font-size:18px;width:34px;text-align:center">${TYPES[e.type].icon}</span>
-        <span style="flex:1;font-size:15px">${esc(TYPES[e.type].label)}</span>
-        <button class="pill" onclick="openEdit('${e.id}')">${hm(e.ts)} ✎</button>
-        <button class="ghost" style="opacity:.3;font-size:15px;padding:4px 6px" onclick="removeEv('${e.id}')" aria-label="Apagar">✕</button>
-      </div>`).join("");
-
-  document.getElementById("app").innerHTML = `
+  const dot = {ok:"🟢", pend:"🟠", err:"🔴"}[syncState];
+  return `
     <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px">
       <div style="font-size:26px;font-weight:900;letter-spacing:-.5px">Francisco</div>
       <div style="font-size:13px;opacity:.55">${ageDays} ${ageDays===1?"dia":"dias"} · 3,06 kg · 48,5 cm</div>
     </div>
-    <div style="font-size:12px;opacity:.4;margin-bottom:16px">nasceu a 19 de julho de 2026</div>
-
-    <div class="card" style="text-align:center;padding:22px 16px;border:1px solid #F0B86022">
-      <div style="font-size:12px;text-transform:uppercase;letter-spacing:2px;opacity:.5;margin-bottom:6px">Última mamada</div>
-      ${heroInner}
-    </div>
-
-    <div class="sec">MAMADA</div>
-    <div class="row">
-      <button class="btn b-leite" onclick="log('esq')"><span class="ico">🤱</span>Esquerdo</button>
-      <button class="btn b-leite" onclick="log('dir')"><span class="ico">🤱</span>Direito</button>
-      <button class="btn b-leite" onclick="log('bib')"><span class="ico">🍼</span>Biberão</button>
-    </div>
-
-    <div class="sec">FRALDA</div>
-    <div class="row">
-      <button class="btn b-agua" onclick="log('xixi')"><span class="ico">💧</span>Xixi</button>
-      <button class="btn b-terra" onclick="log('coco')"><span class="ico">💩</span>Cocó</button>
-      <button class="btn b-terra" onclick="log('ambos')"><span class="ico">💧💩</span>Ambos</button>
-    </div>
-
-    <div class="sec">SONO</div>
-    <div class="row">
-      ${sleeping
-        ? `<button class="btn b-lilas" onclick="log('sono_fim')"><span style="font-size:22px">☀️</span>&nbsp;Acordou</button>`
-        : `<button class="btn b-lilas" onclick="log('sono_ini')"><span style="font-size:22px">🌙</span>&nbsp;Adormeceu</button>`}
-    </div>
-
-    <div class="card" style="display:flex;justify-content:space-between;align-items:center">
-      <button class="ghost" style="font-size:20px;padding:6px" onclick="nav(-1)">‹</button>
-      <div style="text-align:center">
-        <div style="font-weight:800;margin-bottom:6px">${dayLabel}</div>
-        <div style="display:flex;gap:16px;font-size:14px">
-          <span>🤱 ${nMam}</span><span>💧 ${nXixi}</span><span>💩 ${nCoco}</span>
-        </div>
-      </div>
-      <button class="ghost" style="font-size:20px;padding:6px;opacity:${dayOffset<0?1:.2}" onclick="nav(1)">›</button>
-    </div>
-
-    <div class="card">${timeline}</div>
-
-    <div class="card" style="display:flex;gap:8px">
-      <button class="mbtn" onclick="exportar()">⬇︎ Exportar backup</button>
-      <button class="mbtn" onclick="document.getElementById('imp').click()">⬆︎ Importar</button>
-      <input id="imp" type="file" accept=".json,application/json" style="display:none" onchange="importar(this)">
+    <div style="font-size:12px;opacity:.4;margin-bottom:16px">nasceu a 19 de julho de 2026 · ${dot}</div>
+    <div class="tabs">
+      <button class="tab ${screen==="inicio"?"on":""}" onclick="irPara('inicio')">Painel</button>
+      <button class="tab ${screen!=="inicio"?"on":""}" onclick="irPara('registo')">Registo</button>
     </div>`;
 }
 
-function exportar(){
-  const blob = new Blob([JSON.stringify(events)], {type:"application/json"});
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  const d = new Date();
-  a.download = "francisco-backup-"+d.getFullYear()+pad(d.getMonth()+1)+pad(d.getDate())+".json";
-  a.click();
-  URL.revokeObjectURL(a.href);
-  toast("⬇︎ Backup exportado");
-}
-function importar(input){
-  const f = input.files && input.files[0]; if(!f) return;
-  const r = new FileReader();
-  r.onload = () => {
-    try {
-      const parsed = JSON.parse(r.result);
-      if(!Array.isArray(parsed)) throw new Error();
-      const ids = new Set(events.map(e=>e.id));
-      let added = 0;
-      parsed.forEach(e=>{ if(e && e.id && !ids.has(e.id)){ events.push(e); added++; } });
-      save(); render(); toast("✅ "+added+" registos importados");
-    } catch(e){ toast("⚠️ Ficheiro inválido"); }
-  };
-  r.readAsText(f);
-  input.value = "";
+function render(){
+  const app = document.getElementById("app");
+  const now = Date.now();
+
+  if (screen === "pin"){
+    app.innerHTML = header() + `
+      <div class="card" style="text-align:center;padding:26px 20px">
+        <div style="font-size:30px;margin-bottom:8px">🔒</div>
+        <div style="font-weight:800;margin-bottom:14px">PIN de registo</div>
+        <input class="inp" id="pin-inp" type="password" inputmode="numeric" maxlength="6" autocomplete="off">
+        <div style="display:flex;gap:10px">
+          <button class="mbtn" onclick="irPara('inicio')">Cancelar</button>
+          <button class="mbtn save" onclick="validarPin()">Entrar</button>
+        </div>
+      </div>`;
+    const inp = document.getElementById("pin-inp");
+    inp.focus();
+    inp.addEventListener("keydown", e=>{ if(e.key==="Enter") validarPin(); });
+    return;
+  }
+
+  if (screen === "registo"){
+    const doDia = rows.filter(e=>hoje(e.created_at)).slice(0,50);
+    const timeline = doDia.length===0
+      ? `<div style="opacity:.45;font-size:14px;text-align:center;padding:10px 0">Sem registos hoje.</div>`
+      : doDia.map(e=>{
+          const b = rotulo(e);
+          return `<div style="display:flex;align-items:center;gap:12px;padding:9px 2px;border-bottom:1px solid #ffffff0d">
+            <span style="font-size:18px;width:34px;text-align:center">${b.icon}</span>
+            <span style="flex:1;font-size:15px">${esc(b.label)}</span>
+            <span style="font-size:14px;opacity:.6;font-variant-numeric:tabular-nums">${hm(e.created_at)}</span>
+          </div>`;
+        }).join("");
+
+    app.innerHTML = header() + `
+      <div class="sec">MAMADA</div>
+      <div class="row">
+        ${BOTOES.slice(0,3).map(b=>`<button class="btn ${b.cls}" onclick="registar('${b.tipo}','${b.detalhe}')"><span class="ico">${b.icon}</span>${b.label}</button>`).join("")}
+      </div>
+      <div class="sec">FRALDA</div>
+      <div class="row">
+        ${BOTOES.slice(3,6).map(b=>`<button class="btn ${b.cls}" onclick="registar('${b.tipo}','${b.detalhe}')"><span class="ico">${b.icon}</span>${b.label}</button>`).join("")}
+      </div>
+      <div class="sec">SONO</div>
+      <div class="row">
+        ${BOTOES.slice(6,8).map(b=>`<button class="btn ${b.cls}" onclick="registar('${b.tipo}','${b.detalhe}')"><span class="ico">${b.icon}</span>${b.label}</button>`).join("")}
+      </div>
+      <div class="sec">HOJE</div>
+      <div class="card">${timeline}</div>
+      <div style="font-size:12px;opacity:.35;text-align:center">Os registos são definitivos (sem edição nem remoção).</div>`;
+    return;
+  }
+
+  // ---- Painel (dashboard aberto) ----
+  const m = metricas(selDay);
+  const diaLabel = eHoje(selDay) ? "Hoje" : pad(selDay.getDate())+"/"+pad(selDay.getMonth()+1)+"/"+selDay.getFullYear();
+  app.innerHTML = header() + `
+    <div class="card" style="text-align:center;padding:22px 16px;border:1px solid #F0B86022">
+      <div style="font-size:12px;text-transform:uppercase;letter-spacing:2px;opacity:.5;margin-bottom:6px">Última mamada</div>
+      ${m.ultMam
+        ? `<div style="font-size:44px;font-weight:900;color:var(--leite);line-height:1">${hm(m.ultMam.created_at)}</div>
+           <div style="font-size:13px;opacity:.55;margin-top:6px">${rotulo(m.ultMam).label} · há ${durText(now-new Date(m.ultMam.created_at).getTime())}</div>`
+        : `<div style="font-size:18px;opacity:.55">Ainda sem registos</div>`}
+    </div>
+
+    <div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 12px">
+      <button class="mbtn" style="flex:0 0 52px" onclick="navDia(-1)">‹</button>
+      <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px">
+        <input type="date" value="${isoDia(selDay)}" max="${isoDia(new Date())}"
+          onchange="escolherDia(this.value)"
+          style="background:var(--bg);border:1px solid #ffffff22;border-radius:10px;color:var(--text);
+                 font-family:inherit;font-weight:800;font-size:15px;padding:8px 10px;text-align:center;
+                 -webkit-appearance:none;appearance:none;color-scheme:dark;width:100%;max-width:180px">
+        <div style="font-size:11px;opacity:.4">${eHoje(selDay)?"hoje":"toca na data para o calendário"}</div>
+      </div>
+      <button class="mbtn" style="flex:0 0 52px;opacity:${eHoje(selDay)?.25:1}" onclick="navDia(1)">›</button>
+    </div>
+
+    <div class="row">
+      <div class="card metric" style="margin:0"><div class="num" style="color:var(--leite)">${m.nMam}</div><div class="lbl">mamadas</div></div>
+      <div class="card metric" style="margin:0"><div class="num" style="color:var(--agua)">${m.nXixi}</div><div class="lbl">xixis</div></div>
+      <div class="card metric" style="margin:0"><div class="num" style="color:var(--terra)">${m.nCoco}</div><div class="lbl">cocós</div></div>
+    </div>
+    <div style="font-size:12px;opacity:.4;text-align:center;margin:-4px 0 14px">${eHoje(selDay)?"hoje":"em "+diaLabel}</div>
+
+    <div class="row">
+      <div class="card metric" style="margin:0"><div class="num" style="color:var(--agua)">${m.totXixi}</div><div class="lbl">xixis no total</div></div>
+      <div class="card metric" style="margin:0"><div class="num" style="color:var(--terra)">${m.totCoco}</div><div class="lbl">cocós no total</div></div>
+    </div>`;
 }
 
-document.getElementById("modal").addEventListener("click", function(ev){
-  if (ev.target === this) closeEdit();
-});
 render();
-setInterval(render, 30000);
+pull();
+setInterval(pull, 45000);
+document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) pull(); });
 </script>
 </body>
 </html>
