@@ -91,16 +91,20 @@ const LOCAL_KEY = "francisco-cache-v3";
 const QUEUE_KEY = "francisco-queue-v3";
 
 const BOTOES = [
-  {tipo:"mamada", detalhe:"esquerdo", label:"Esquerdo", icon:"🤱", cls:"b-leite"},
-  {tipo:"mamada", detalhe:"direito",  label:"Direito",  icon:"🤱", cls:"b-leite"},
-  {tipo:"mamada", detalhe:"biberao",  label:"Biberão",  icon:"🍼", cls:"b-leite"},
   {tipo:"fralda", detalhe:"xixi",     label:"Xixi",     icon:"💧", cls:"b-agua"},
   {tipo:"fralda", detalhe:"coco",     label:"Cocó",     icon:"💩", cls:"b-terra"},
   {tipo:"fralda", detalhe:"ambos",    label:"Ambos",    icon:"💧💩", cls:"b-terra"},
   {tipo:"sono",   detalhe:"adormeceu",label:"Adormeceu",icon:"🌙", cls:"b-lilas"},
   {tipo:"sono",   detalhe:"acordou",  label:"Acordou",  icon:"☀️", cls:"b-lilas"},
 ];
+const LADOS = { esquerdo:"esq.", direito:"dir.", biberao:"biberão" };
 const rotulo = e => {
+  if (e.tipo === "mamada"){
+    return {
+      icon: e.detalhe === "biberao" ? "🍼" : "🤱",
+      label: "Mamada" + (e.detalhe && LADOS[e.detalhe] ? " · " + LADOS[e.detalhe] : "")
+    };
+  }
   const b = BOTOES.find(b=>b.tipo===e.tipo && b.detalhe===e.detalhe);
   return b ? b : {label:e.tipo, icon:"•"};
 };
@@ -193,14 +197,52 @@ function registar(tipo, detalhe){
   const item = { id: uuid(), created_at: new Date().toISOString(), tipo, detalhe, nota: null };
   rows.unshift(item); saveLocal();
   queue.push(item); saveQueue();
+  selDay = new Date();
   render();
-  const b = BOTOES.find(x=>x.tipo===tipo&&x.detalhe===detalhe);
+  const b = rotulo(item);
   toast(b.icon+" "+b.label+" · "+hm(item.created_at));
   flushQueue().then(()=>{ syncState = queue.length ? "pend" : "ok"; render(); });
+  return item;
+}
+
+function registarMamada(){
+  const item = registar("mamada", null);
+  renderLadoModal(item.id);
+  document.getElementById("modal").style.display = "flex";
+}
+
+async function setLado(id, lado){
+  const v = lado || null;
+  const naFila = queue.find(q=>q.id===id);
+  try {
+    if (naFila){ naFila.detalhe = v; saveQueue(); }
+    else { await patchRow(id, { detalhe: v }); }
+    rows = rows.map(e=>e.id===id ? {...e, detalhe: v} : e);
+    saveLocal();
+  } catch(e){
+    toast("🟠 Lado fica por gravar, edita depois");
+  }
+  closeEdit(); render();
+}
+
+function renderLadoModal(id){
+  document.getElementById("modal").innerHTML = `
+    <div class="box">
+      <div style="font-weight:800;font-size:16px;margin-bottom:4px">🤱 Mamada registada</div>
+      <div style="font-size:13px;opacity:.5;margin-bottom:14px">Qual foi a mama? (opcional, só informativo — se foram as duas, escolhe a última)</div>
+      <div class="mrow">
+        <button class="mbtn" onclick="setLado('${id}','esquerdo')">Esquerda</button>
+        <button class="mbtn" onclick="setLado('${id}','direito')">Direita</button>
+        <button class="mbtn" onclick="setLado('${id}','biberao')">Biberão</button>
+      </div>
+      <div class="mrow" style="margin-bottom:0">
+        <button class="mbtn" onclick="closeEdit()">Agora não</button>
+      </div>
+    </div>`;
 }
 
 // ---------- edição e remoção (precisa da policy de UPDATE) ----------
-let editId = null, editTs = 0;
+let editId = null, editTs = 0, editDetalhe = null;
 
 async function patchRow(id, body){
   const r = await fetch(SUPABASE_URL + "/rest/v1/baby_events?id=eq." + id, {
@@ -213,24 +255,28 @@ async function patchRow(id, body){
 
 function openEdit(id){
   const ev = rows.find(e=>e.id===id); if(!ev) return;
-  editId = id; editTs = new Date(ev.created_at).getTime();
+  editId = id; editTs = new Date(ev.created_at).getTime(); editDetalhe = ev.detalhe || null;
   renderModal();
   document.getElementById("modal").style.display = "flex";
 }
 function closeEdit(){ document.getElementById("modal").style.display="none"; editId=null; }
 function shiftEdit(ms){ editTs += ms; renderModal(); }
+function setEditDetalhe(v){ editDetalhe = v || null; renderModal(); }
 
 async function saveEdit(){
   const id = editId;
+  const ev = rows.find(e=>e.id===id); if(!ev) return;
   const iso = new Date(editTs).toISOString();
+  const body = { created_at: iso };
+  if (ev.tipo === "mamada") body.detalhe = editDetalhe;
   const naFila = queue.find(q=>q.id===id);
   try {
-    if (naFila){ naFila.created_at = iso; saveQueue(); }
-    else { await patchRow(id, { created_at: iso }); }
-    rows = rows.map(e=>e.id===id ? {...e, created_at: iso} : e);
+    if (naFila){ Object.assign(naFila, body); saveQueue(); }
+    else { await patchRow(id, body); }
+    rows = rows.map(e=>e.id===id ? {...e, ...body} : e);
     rows.sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
     saveLocal(); closeEdit(); render();
-    toast("✎ Movido para "+hm(iso));
+    toast("✎ Guardado · "+hm(iso));
   } catch(e){
     toast("🔴 Sem ligação, tenta outra vez");
   }
@@ -270,6 +316,13 @@ function renderModal(){
         <button class="mbtn" onclick="shiftEdit(300000)">+5m</button>
         <button class="mbtn" onclick="shiftEdit(3600000)">+1h</button>
       </div>
+      ${ev.tipo==="mamada" ? `
+      <div style="font-size:12px;opacity:.5;margin-bottom:8px">Mama (informativo)</div>
+      <div class="mrow">
+        ${[["","—"],["esquerdo","Esq."],["direito","Dir."],["biberao","Bib."]].map(([v,l])=>
+          `<button class="mbtn" style="${(editDetalhe||"")===v?"border-color:var(--leite);color:var(--leite);font-weight:800":""}" onclick="setEditDetalhe('${v}')">${l}</button>`
+        ).join("")}
+      </div>` : ``}
       <div class="mrow" style="margin-bottom:0">
         <button class="mbtn" onclick="closeEdit()">Cancelar</button>
         <button class="mbtn save" onclick="saveEdit()">Guardar</button>
@@ -290,6 +343,15 @@ function validarPin(){
 }
 
 // ---------- render ----------
+function media(filtro){
+  const ts = rows.filter(filtro).map(e=>new Date(e.created_at).getTime());
+  if (!ts.length) return null;
+  const first = new Date(Math.min(...ts)); first.setHours(0,0,0,0);
+  const dias = Math.floor((Date.now() - first.getTime())/86400000) + 1;
+  return ts.length / dias;
+}
+const fmtMedia = v => v==null ? "–" : (Math.round(v*10)/10).toString().replace(".", ",");
+
 function metricas(dia){
   const doDia = rows.filter(e=>mesmoDia(e.created_at, dia));
   const nMam = doDia.filter(e=>e.tipo==="mamada").length;
@@ -297,8 +359,11 @@ function metricas(dia){
   const nCoco = doDia.filter(e=>e.tipo==="fralda"&&(e.detalhe==="coco"||e.detalhe==="ambos")).length;
   const totXixi = rows.filter(e=>e.tipo==="fralda"&&(e.detalhe==="xixi"||e.detalhe==="ambos")).length;
   const totCoco = rows.filter(e=>e.tipo==="fralda"&&(e.detalhe==="coco"||e.detalhe==="ambos")).length;
+  const medMam = media(e=>e.tipo==="mamada");
+  const medXixi = media(e=>e.tipo==="fralda"&&(e.detalhe==="xixi"||e.detalhe==="ambos"));
+  const medCoco = media(e=>e.tipo==="fralda"&&(e.detalhe==="coco"||e.detalhe==="ambos"));
   const ultMam = rows.find(e=>e.tipo==="mamada");
-  return {nMam, nXixi, nCoco, totXixi, totCoco, ultMam};
+  return {nMam, nXixi, nCoco, totXixi, totCoco, medMam, medXixi, medCoco, ultMam};
 }
 
 function header(){
@@ -339,9 +404,10 @@ function render(){
   }
 
   if (screen === "registo"){
-    const doDia = rows.filter(e=>hoje(e.created_at)).slice(0,50);
+    const diaLabelR = eHoje(selDay) ? "HOJE" : pad(selDay.getDate())+"/"+pad(selDay.getMonth()+1)+"/"+selDay.getFullYear();
+    const doDia = rows.filter(e=>mesmoDia(e.created_at, selDay)).slice(0,80);
     const timeline = doDia.length===0
-      ? `<div style="opacity:.45;font-size:14px;text-align:center;padding:10px 0">Sem registos hoje.</div>`
+      ? `<div style="opacity:.45;font-size:14px;text-align:center;padding:10px 0">Sem registos neste dia.</div>`
       : doDia.map(e=>{
           const b = rotulo(e);
           return `<div style="display:flex;align-items:center;gap:12px;padding:9px 2px;border-bottom:1px solid #ffffff0d">
@@ -355,17 +421,31 @@ function render(){
     app.innerHTML = header() + `
       <div class="sec">MAMADA</div>
       <div class="row">
-        ${BOTOES.slice(0,3).map(b=>`<button class="btn ${b.cls}" onclick="registar('${b.tipo}','${b.detalhe}')"><span class="ico">${b.icon}</span>${b.label}</button>`).join("")}
+        <button class="btn b-leite" onclick="registarMamada()"><span class="ico">🤱</span>Registar mamada</button>
       </div>
       <div class="sec">FRALDA</div>
       <div class="row">
-        ${BOTOES.slice(3,6).map(b=>`<button class="btn ${b.cls}" onclick="registar('${b.tipo}','${b.detalhe}')"><span class="ico">${b.icon}</span>${b.label}</button>`).join("")}
+        ${BOTOES.slice(0,3).map(b=>`<button class="btn ${b.cls}" onclick="registar('${b.tipo}','${b.detalhe}')"><span class="ico">${b.icon}</span>${b.label}</button>`).join("")}
       </div>
       <div class="sec">SONO</div>
       <div class="row">
-        ${BOTOES.slice(6,8).map(b=>`<button class="btn ${b.cls}" onclick="registar('${b.tipo}','${b.detalhe}')"><span class="ico">${b.icon}</span>${b.label}</button>`).join("")}
+        ${BOTOES.slice(3,5).map(b=>`<button class="btn ${b.cls}" onclick="registar('${b.tipo}','${b.detalhe}')"><span class="ico">${b.icon}</span>${b.label}</button>`).join("")}
       </div>
-      <div class="sec">HOJE</div>
+
+      <div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 12px">
+        <button class="mbtn" style="flex:0 0 52px" onclick="navDia(-1)">‹</button>
+        <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px">
+          <input type="date" value="${isoDia(selDay)}" max="${isoDia(new Date())}"
+            onchange="escolherDia(this.value)"
+            style="background:var(--bg);border:1px solid #ffffff22;border-radius:10px;color:var(--text);
+                   font-family:inherit;font-weight:800;font-size:15px;padding:8px 10px;text-align:center;
+                   -webkit-appearance:none;appearance:none;color-scheme:dark;width:100%;max-width:180px">
+          <div style="font-size:11px;opacity:.4">os botões registam sempre à hora atual; ajusta depois com ✎</div>
+        </div>
+        <button class="mbtn" style="flex:0 0 52px;opacity:${eHoje(selDay)?.25:1}" onclick="navDia(1)">›</button>
+      </div>
+
+      <div class="sec">${diaLabelR}</div>
       <div class="card">${timeline}</div>`;
     return;
   }
@@ -401,6 +481,12 @@ function render(){
       <div class="card metric" style="margin:0"><div class="num" style="color:var(--terra)">${m.nCoco}</div><div class="lbl">cocós</div></div>
     </div>
     <div style="font-size:12px;opacity:.4;text-align:center;margin:-4px 0 14px">${eHoje(selDay)?"hoje":"em "+diaLabel}</div>
+
+    <div class="row">
+      <div class="card metric" style="margin:0"><div class="num" style="color:var(--leite)">${fmtMedia(m.medMam)}</div><div class="lbl">mamadas/dia (média)</div></div>
+      <div class="card metric" style="margin:0"><div class="num" style="color:var(--agua)">${fmtMedia(m.medXixi)}</div><div class="lbl">xixis/dia (média)</div></div>
+      <div class="card metric" style="margin:0"><div class="num" style="color:var(--terra)">${fmtMedia(m.medCoco)}</div><div class="lbl">cocós/dia (média)</div></div>
+    </div>
 
     <div class="row">
       <div class="card metric" style="margin:0"><div class="num" style="color:var(--agua)">${m.totXixi}</div><div class="lbl">xixis no total</div></div>
