@@ -502,5 +502,26 @@ pull();
 setInterval(pull, 45000);
 document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) pull(); });
 </script>
+  <!-- surpresa 1º mês -->
+<script>
+(function(){
+  var KEY='surpresa1mesKiko';
+  if(location.search.indexOf('resetSurpresa')>-1) localStorage.removeItem(KEY);
+  if(localStorage.getItem(KEY)) return;
+  document.addEventListener('click',function(e){
+    var n=e.target, depth=0;
+    while(n && n.nodeType===1 && depth<5){
+      var t=(n.textContent||'').trim();
+      if(t.length<40 && /registar mamada/i.test(t)){
+        if(localStorage.getItem(KEY)) return;
+        localStorage.setItem(KEY,'1');
+        setTimeout(function(){ location.href='1mesKiko.html'; },1200);
+        return;
+      }
+      n=n.parentElement; depth++;
+    }
+  },true);
+})();
+
 </body>
 </html>
